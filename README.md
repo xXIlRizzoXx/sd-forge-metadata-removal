@@ -81,7 +81,6 @@ Everything that would appear in **PNG Info**:
 
 ## What is kept
 
-- The **ICC color profile** (color fidelity) — **always** kept.
 - The **transparency (alpha) channel**, when present.
 - The **pixels**: for PNG the rewrite is **lossless** (JPEG/WEBP are re-encoded at
   quality 95).

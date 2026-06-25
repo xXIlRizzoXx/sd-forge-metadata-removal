@@ -10,7 +10,7 @@ First public release of **Metadata Removal**, an extension for **Stable Diffusio
 Forge (Neo)** (also compatible with AUTOMATIC1111-derived web UIs).
 
 Removes **all** metadata readable by the «PNG Info» tab (prompt, parameters, model, seed,
-EXIF, XMP, comments) **without altering the pixels** and **keeping the ICC color profile**.
+EXIF, XMP, comments) **without altering the pixels**.
 
 ### Features
 
@@ -42,7 +42,7 @@ EXIF, XMP, comments) **without altering the pixels** and **keeping the ICC color
 - **PNG**: **lossless** rewrite (all text chunks and EXIF removed).
 - **JPEG / WEBP**: EXIF/XMP/comments removed (re-encoded at high quality, 95).
 - **Animated GIF / WEBP / APNG**: all frames, timings and the loop are kept.
-- **ICC color profile** and **alpha (transparency) channel**: always kept.
+- **Alpha (transparency) channel**: always kept.
 
 ### Security and robustness
 
