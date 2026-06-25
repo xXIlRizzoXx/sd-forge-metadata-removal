@@ -1,0 +1,12 @@
+# Diario di sviluppo interno (resta locale, non pubblicato)
+STATO-SVILUPPO.md
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+
+# Sistema operativo
+.DS_Store
+Thumbs.db
+desktop.ini
