@@ -1,40 +1,39 @@
 # -*- coding: utf-8 -*-
 """
-Metadata Removal — estensione per Stable Diffusion WebUI Forge (branch "neo").
-(L'interfaccia utente è in inglese; i commenti nel codice sono in italiano per Matteo.)
+Metadata Removal — extension for Stable Diffusion WebUI Forge (branch "neo").
 
-Cosa aggiunge:
-  1) Una sezione a fisarmonica "Metadata Removal" dentro txt2img e img2img.
-     Se la spunta è attiva, ripulisce automaticamente i metadati dalle immagini
-     generate in quella scheda (di default SPENTA). In questo caso il file appena
-     generato viene SEMPRE ripulito sul posto (sovrascritto).
+What it adds:
+  1) A "Metadata Removal" accordion section inside txt2img and img2img.
+     When the checkbox is on, it automatically strips metadata from images
+     generated in that tab (OFF by default). In this case the freshly
+     generated file is ALWAYS cleaned in place (overwritten).
 
-  2) Una scheda in alto "Metadata Removal" (posizionata tra «Extras» e «PNG Info»)
-     con tre sotto-schede in stile Extras:
-       - Single Image        → ripulisce una singola immagine caricata (download);
-       - Batch Process       → ripulisce più immagini caricate (download);
-       - Batch from Directory → ripulisce tutte le immagini di una cartella su disco.
+  2) A top-level "Metadata Removal" tab (placed between «Extras» and «PNG Info»)
+     with three Extras-style sub-tabs:
+       - Single Image        → cleans a single uploaded image (download);
+       - Batch Process       → cleans several uploaded images (download);
+       - Batch from Directory → cleans every image in a folder on disk.
 
-  3) Un pulsante "Delete metadata" dentro l'estensione Image Browser
-     (AlUlkesh/stable-diffusion-webui-images-browser), accanto al pulsante "Delete":
-     ripulisce l'immagine attualmente selezionata.
+  3) A "Delete metadata" button inside the Image Browser extension
+     (AlUlkesh/stable-diffusion-webui-images-browser), next to "Delete":
+     it cleans the currently selected image.
 
-Sovrascrivi o copia? Per le operazioni SU DISCO (Batch from Directory e pulsante
-dell'Image Browser) il comportamento è deciso da un'unica impostazione in
-Settings → Metadata Removal: "sovrascrivi l'originale" oppure "salva una copia
-pulita nella stessa cartella" (con un suffisso nel nome).
+Overwrite or copy? For ON-DISK operations (Batch from Directory and the Image
+Browser button) the behavior is decided by a single setting in
+Settings → Metadata Removal: "overwrite the original" or "save a clean copy
+in the same folder" (with a suffix in the name).
 
-Cosa viene rimosso (tutto ciò che il tab "PNG Info" potrebbe leggere):
-  - PNG : tutti i blocchi di testo (parameters, prompt, workflow, Comment,
-          Description, Software, XMP, ...) e qualsiasi EXIF incorporato.
-  - JPEG/WEBP : EXIF (incluso UserComment con prompt e parametri), XMP, commenti.
+What is removed (everything the "PNG Info" tab could read):
+  - PNG : all text chunks (parameters, prompt, workflow, Comment,
+          Description, Software, XMP, ...) and any embedded EXIF.
+  - JPEG/WEBP : EXIF (including UserComment with prompt and parameters), XMP, comments.
 
-Cosa viene mantenuto:
-  - Il profilo colore ICC (fedeltà dei colori) — mantenuto sempre.
-  - Il canale di trasparenza (alfa), quando presente.
-  - I pixel: per il PNG la riscrittura è senza perdita di qualità.
+What is kept:
+  - The ICC color profile (color fidelity) — always kept.
+  - The alpha (transparency) channel, when present.
+  - The pixels: for PNG the rewrite is lossless.
 
-Dipendenze: solo Pillow, già incluso in Forge. Nessuna installazione aggiuntiva.
+Dependencies: only Pillow, already included in Forge. No extra install.
 """
 
 from __future__ import annotations
@@ -49,25 +48,25 @@ from PIL import Image
 
 from modules import script_callbacks, scripts, shared
 
-try:  # tqdm è incluso in Forge: lo usiamo per le barre di avanzamento nella console
+try:  # tqdm ships with Forge: we use it for the console progress bars
     from tqdm import tqdm as _tqdm
-except Exception:  # ripiego: nessuna barra, semplice iterazione
+except Exception:  # fallback: no bar, plain iteration
     def _tqdm(it, **kwargs):
         return it
 
 
 def _log(msg: str) -> None:
-    """Stampa nel log della console cosa sta facendo l'estensione."""
+    """Print to the console log what the extension is doing."""
     print(f"[Metadata Removal] {msg}")
 
 
 # ---------------------------------------------------------------------------
-# Formati gestiti
+# Supported formats
 # ---------------------------------------------------------------------------
 SUPPORTED_EXTS = {".png", ".jpg", ".jpeg", ".webp", ".bmp", ".tiff", ".tif", ".gif"}
 _IMG_TYPES = [".png", ".jpg", ".jpeg", ".webp", ".bmp", ".tiff", ".tif", ".gif"]
 
-# Chiavi che, se ancora presenti dopo la pulizia, segnalano metadati residui.
+# Keys that, if still present after cleaning, signal residual metadata.
 _LEAK_KEYS = (
     "parameters", "prompt", "workflow", "exif", "comment", "Comment",
     "Description", "Software", "Title", "Author", "Copyright",
@@ -80,23 +79,23 @@ def _is_supported(path: str) -> bool:
 
 
 # ---------------------------------------------------------------------------
-# Limiti di sicurezza contro immagini malevole
-#   - "bomb" di decompressione (dimensioni enormi che esauriscono la RAM);
-#   - animazioni con un numero enorme di fotogrammi (un file piccolo può
-#     dichiararne migliaia).
+# Safety limits against malicious images
+#   - decompression "bombs" (huge dimensions that exhaust RAM);
+#   - animations with a huge number of frames (a small file can declare
+#     thousands of them).
 # ---------------------------------------------------------------------------
-_MAX_FRAMES = 2000                          # max fotogrammi per immagine animata
-_MAX_ANIM_TOTAL_PIXELS = 256 * 1024 * 1024  # ~268 Mpx totali (~1 GB in RGBA)
+_MAX_FRAMES = 2000                          # max frames per animated image
+_MAX_ANIM_TOTAL_PIXELS = 256 * 1024 * 1024  # ~268 Mpx total (~1 GB in RGBA)
 
 
 def _pixel_cap() -> int:
-    """Soglia di pixel oltre la quale rifiutiamo l'immagine (anti decompression-bomb)."""
+    """Pixel threshold above which we refuse the image (anti decompression-bomb)."""
     cap = getattr(Image, "MAX_IMAGE_PIXELS", None)
-    return cap if cap else 89478485  # default storico di Pillow (~89,5 Mpx)
+    return cap if cap else 89478485  # Pillow's historical default (~89.5 Mpx)
 
 
 def _check_bomb(size) -> None:
-    """Solleva ValueError se l'immagine ha troppi pixel (possibile bomb di decompressione)."""
+    """Raise ValueError if the image has too many pixels (possible decompression bomb)."""
     w, h = (size or (0, 0))
     if w and h and w * h > _pixel_cap():
         raise ValueError(
@@ -105,16 +104,16 @@ def _check_bomb(size) -> None:
 
 
 # ---------------------------------------------------------------------------
-# Nucleo: ricostruisce un'immagine senza alcun metadato e la salva
+# Core: rebuild an image without any metadata and save it
 # ---------------------------------------------------------------------------
 def _build_clean_static(src: Image.Image) -> Image.Image:
-    """Ricostruisce un fotogramma statico con gli stessi pixel ma senza metadati.
+    """Rebuild a static frame with the same pixels but no metadata.
 
-    paste() copia i pixel esattamente (senza perdita) e NON copia il dizionario
-    .info (al contrario di copy(), che invece conserva i metadati).
-    Le immagini a palette ('P') vengono portate a RGB/RGBA: così si preserva
-    l'aspetto (e l'eventuale trasparenza) evitando differenze di gestione della
-    palette tra le varie versioni di Pillow.
+    paste() copies the pixels exactly (lossless) and does NOT copy the .info
+    dictionary (unlike copy(), which keeps the metadata).
+    Palette ('P') images are converted to RGB/RGBA: this preserves the
+    appearance (and any transparency) while avoiding palette-handling
+    differences across Pillow versions.
     """
     work = src
     if work.mode == "P":
@@ -125,10 +124,10 @@ def _build_clean_static(src: Image.Image) -> Image.Image:
 
 
 def _clean_frames(im: Image.Image):
-    """Estrae TUTTI i fotogrammi di un'immagine animata, ripuliti dai metadati.
+    """Extract ALL frames of an animated image, cleaned of metadata.
 
-    Limita il numero di fotogrammi e i pixel totali per non esaurire la memoria con
-    immagini animate malevole (un file piccolo può dichiarare migliaia di fotogrammi).
+    Caps the frame count and the total pixels so a malicious animated image
+    (a small file can declare thousands of frames) cannot exhaust memory.
     """
     n = getattr(im, "n_frames", 1)
     if n > _MAX_FRAMES:
@@ -149,29 +148,29 @@ def _clean_frames(im: Image.Image):
     return frames, durations
 
 
-# Formati che supportano più fotogrammi (per le immagini animate)
+# Formats that support multiple frames (for animated images)
 _ANIMATION_FORMATS = {"GIF", "WEBP", "PNG"}
-# Formati che supportano il profilo colore ICC
+# Formats that support the ICC color profile
 _ICC_FORMATS = {"PNG", "JPEG", "WEBP", "TIFF"}
 
 
 def _save_static(img: Image.Image, tmp: str, out_format: str, save_kwargs: dict) -> None:
-    """Salva un singolo fotogramma (gestendo la mancanza di trasparenza nel JPEG)."""
+    """Save a single frame (handling JPEG's lack of transparency)."""
     if out_format == "JPEG" and img.mode in ("RGBA", "LA", "P"):
-        img = img.convert("RGB")  # il JPEG non ha trasparenza
+        img = img.convert("RGB")  # JPEG has no transparency
     img.save(tmp, format=out_format, **save_kwargs)
 
 
 def strip_file(src_path: str, dst_path: str, keep_icc: bool = True) -> None:
-    """Legge src_path, rimuove ogni metadato e scrive in dst_path.
+    """Read src_path, remove every metadata field and write to dst_path.
 
-    Scrive prima su un file temporaneo e poi lo sostituisce, così un'eventuale
-    interruzione non lascia mai un file danneggiato al posto dell'originale.
-    Le immagini animate (GIF/WEBP/APNG) mantengono tutti i fotogrammi, i tempi e
-    il loop; per il PNG la riscrittura è senza perdita di qualità.
+    Writes to a temporary file first and then replaces it, so an interruption
+    never leaves a corrupted file in place of the original.
+    Animated images (GIF/WEBP/APNG) keep all frames, timings and the loop;
+    for PNG the rewrite is lossless.
     """
     with Image.open(src_path) as im:
-        _check_bomb(im.size)  # rifiuta immagini sproporzionate (anti decompression-bomb)
+        _check_bomb(im.size)  # refuse oversized images (anti decompression-bomb)
         im.load()
         icc = im.info.get("icc_profile") if keep_icc else None
         is_anim = getattr(im, "is_animated", False) and getattr(im, "n_frames", 1) > 1
@@ -187,7 +186,7 @@ def strip_file(src_path: str, dst_path: str, keep_icc: bool = True) -> None:
     elif ext == ".webp":
         out_format, save_kwargs = "WEBP", {"quality": 95, "method": 6}
     elif ext in (".tiff", ".tif"):
-        out_format, save_kwargs = "TIFF", {"compression": "tiff_lzw"}  # senza perdita, evita TIFF enormi
+        out_format, save_kwargs = "TIFF", {"compression": "tiff_lzw"}  # lossless, avoids huge TIFFs
     elif ext == ".bmp":
         out_format, save_kwargs = "BMP", {}
     elif ext == ".gif":
@@ -209,21 +208,21 @@ def strip_file(src_path: str, dst_path: str, keep_icc: bool = True) -> None:
             anim_kwargs.update(save_all=True, append_images=frames[1:],
                                duration=durations, loop=loop)
             if out_format == "GIF":
-                # Disposal come SCALARE: i fotogrammi sono già completi (full-frame) e
-                # una LISTA manda in crash l'encoder quando Pillow riduce a un solo
-                # fotogramma quelli divenuti identici dopo la pulizia.
+                # Disposal as a SCALAR: frames are already complete (full-frame) and a
+                # LIST crashes the encoder when Pillow collapses to a single frame those
+                # that became identical after cleaning.
                 anim_kwargs["disposal"] = 2
             try:
                 frames[0].save(tmp, format=out_format, **anim_kwargs)
             except Exception:
-                # Ripiego robusto: se l'encoder d'animazione fallisce comunque, salva un
-                # singolo fotogramma PULITO (l'importante è rimuovere i metadati).
+                # Robust fallback: if the animation encoder still fails, save a single
+                # CLEAN frame (what matters is removing the metadata).
                 _save_static(frames[0], tmp, out_format, save_kwargs)
         else:
             _save_static(frames[0] if is_anim else clean, tmp, out_format, save_kwargs)
         if os.path.getsize(tmp) <= 0:
             raise OSError("the cleaned file is unexpectedly empty (0 bytes)")
-        os.replace(tmp, dst_path)  # sostituzione atomica
+        os.replace(tmp, dst_path)  # atomic replacement
     finally:
         if os.path.exists(tmp):
             try:
@@ -233,8 +232,8 @@ def strip_file(src_path: str, dst_path: str, keep_icc: bool = True) -> None:
 
 
 def _residual_metadata(path: str):
-    """Riapre il file e restituisce le chiavi di metadati ancora presenti (verifica
-    best-effort): testo PNG, chiavi note in info, EXIF e tag TIFF tipici."""
+    """Reopen the file and return the metadata keys still present (best-effort
+    check): PNG text, known info keys, EXIF and typical TIFF tags."""
     try:
         with Image.open(path) as im:
             info = dict(im.info)
@@ -244,9 +243,9 @@ def _residual_metadata(path: str):
                 if key in info and key not in leftovers:
                     leftovers.append(key)
             try:
-                # Per il TIFF la IFD principale contiene tag STRUTTURALI (dimensioni,
-                # compressione, ...): non sono metadati. Quindi escludiamo il TIFF da
-                # questo controllo; i suoi metadati veri sono controllati su tag_v2 sotto.
+                # For TIFF the main IFD holds STRUCTURAL tags (dimensions,
+                # compression, ...): those are not metadata. So we exclude TIFF from
+                # this check; its real metadata is checked on tag_v2 below.
                 if getattr(im, "format", None) != "TIFF" and len(im.getexif()) and "exif" not in leftovers:
                     leftovers.append("exif")
             except Exception:
@@ -264,7 +263,7 @@ def _residual_metadata(path: str):
 
 
 def _read_geninfo(path: str) -> str:
-    """Legge il testo dei parametri (per aggiornare il riquadro info dell'Image Browser)."""
+    """Read the parameters text (to refresh the Image Browser's info box)."""
     try:
         with Image.open(path) as im:
             return im.info.get("parameters", "") or ""
@@ -272,26 +271,26 @@ def _read_geninfo(path: str) -> str:
         return ""
 
 
-# Nome mostrato per la sezione, la scheda e il sottomenu di Settings.
+# Name shown for the section, the tab and the Settings submenu.
 TAB_TITLE = "Metadata Removal"
 
-# Modalità di output (per le operazioni su disco), scelta nei Settings.
+# Output mode (for on-disk operations), chosen in Settings.
 MODE_FOLDER = "Save to the «Metadata Removal» folder (in the images root)"
 MODE_COPY = "Save a clean copy in the same folder"
 MODE_OVERWRITE = "Overwrite the original image"
 
 
 def _output_settings():
-    """Legge dai Settings la modalità di salvataggio e il suffisso per le copie."""
+    """Read the save mode and the copy suffix from Settings."""
     mode = getattr(shared.opts, "mr_output_mode", MODE_FOLDER)
     suffix = getattr(shared.opts, "mr_copy_suffix", "_clean") or "_clean"
     return mode, suffix
 
 
 def _images_root():
-    """Radice dove Forge salva le immagini (dove stanno txt2img-images, extras-images, ...).
+    """Root where Forge saves images (where txt2img-images, extras-images, ... live).
 
-    Risolve eventuali junction/symlink (es. Stability Matrix) per il percorso reale.
+    Resolves any junction/symlink (e.g. Stability Matrix) to the real path.
     """
     try:
         master = (getattr(shared.opts, "outdir_samples", "") or "").strip()
@@ -307,11 +306,11 @@ def _images_root():
 
 
 def _extension_dir():
-    """Cartella dedicata (di default «Metadata Removal») dentro la radice immagini.
+    """Dedicated folder (by default «Metadata Removal») inside the images root.
 
-    Il nome viene ridotto a un SINGOLO segmento sicuro: separatori di percorso,
-    lettere di unità (es. «C:») e «..» vengono neutralizzati, così un valore errato
-    nei Settings non può far scrivere fuori dalla radice delle immagini.
+    The name is reduced to a SINGLE safe segment: path separators, drive
+    letters (e.g. «C:») and «..» are neutralized, so a wrong value in Settings
+    cannot write outside the images root.
     """
     raw = (getattr(shared.opts, "mr_folder_name", TAB_TITLE) or TAB_TITLE).strip() or TAB_TITLE
     name = os.path.basename(raw.replace("\\", "/").rstrip("/"))
@@ -328,7 +327,7 @@ def _extension_dir():
 
 
 def _ensure_output_dir():
-    """Restituisce la cartella dedicata creandola; ripiega su una cartella temporanea se non riesce."""
+    """Return the dedicated folder, creating it; fall back to a temp folder if it fails."""
     out_dir = _extension_dir()
     try:
         os.makedirs(out_dir, exist_ok=True)
@@ -338,12 +337,12 @@ def _ensure_output_dir():
 
 
 def _disk_dst(src_path: str, mode: str, suffix: str, used=None) -> str:
-    """Percorso di destinazione su disco in base alla modalità scelta nei Settings.
+    """Destination path on disk based on the mode chosen in Settings.
 
-    In «cartella dedicata» e in «sovrascrivi» il file MANTIENE il NOME ORIGINALE; nella
-    cartella dedicata, se esiste già un file con quel nome, viene aggiunto un suffisso
-    numerico (_1, _2, …) così non si sovrascrive mai nulla. Solo in modalità «copia nella
-    stessa cartella» si usa il suffisso scelto nei Settings.
+    In «dedicated folder» and «overwrite» the file KEEPS its ORIGINAL NAME; in the
+    dedicated folder, if a file with that name already exists, a numeric suffix
+    (_1, _2, …) is added so nothing is ever overwritten. Only in «save a clean copy
+    in the same folder» mode is the Settings suffix used.
     """
     if mode == MODE_OVERWRITE:
         return src_path
@@ -352,17 +351,17 @@ def _disk_dst(src_path: str, mode: str, suffix: str, used=None) -> str:
         if used is not None:
             return _unique_dst(_extension_dir(), base, used)
         return os.path.join(_extension_dir(), base)
-    # Modalità «copia»: nome = <originale><suffisso><.ext> nella stessa cartella. Il
-    # suffisso (predefinito «_clean») è RISERVATO alle copie pulite: se esiste già un file
-    # con quel nome viene sostituito (idempotente — ri-pulendo si aggiorna la copia, senza
-    # creare doppioni «_clean_1», «_clean_2», …).
+    # «Copy» mode: name = <original><suffix><.ext> in the same folder. The suffix
+    # (default «_clean») is RESERVED for clean copies: if a file with that name
+    # already exists it is replaced (idempotent — re-cleaning updates the copy,
+    # without creating duplicates «_clean_1», «_clean_2», …).
     root, ext = os.path.splitext(src_path)
     return f"{root}{suffix}{ext}"
 
 
 # ===========================================================================
-# 1) Pulizia automatica dopo la generazione (sezione in txt2img / img2img)
-#    In questo caso il file appena generato viene SEMPRE sovrascritto sul posto.
+# 1) Automatic cleaning after generation (section in txt2img / img2img)
+#    In this case the freshly generated file is ALWAYS overwritten in place.
 # ===========================================================================
 class MetadataRemovalScript(scripts.Script):
     def title(self):
@@ -386,7 +385,7 @@ class MetadataRemovalScript(scripts.Script):
         return [enabled]
 
     def process(self, p, enabled):
-        # Letti dal callback globale _on_image_saved.
+        # Read by the global callback _on_image_saved.
         p._mr_enabled = bool(enabled)
         p._mr_stripped = []
         p._mr_failed = []
@@ -401,16 +400,16 @@ class MetadataRemovalScript(scripts.Script):
                   "and may still contain metadata:" % len(failed))
             for f in failed:
                 print("    -", f)
-            # Avviso VISIBILE nell'interfaccia (non solo console): chi ha attivato la
-            # pulizia per non diffondere i prompt deve accorgersi se un file è rimasto sporco.
+            # VISIBLE warning in the UI (not just the console): whoever enabled cleaning
+            # to avoid leaking prompts must notice if a file was left dirty.
             try:
                 gr.Warning("Metadata Removal: %d image(s) could NOT be cleaned and may "
                            "still contain metadata (see console for the list)." % len(failed))
             except Exception:
                 pass
 
-        # Se richiesto, elimina anche l'eventuale file .txt dei parametri salvato
-        # accanto all'immagine (opzione "save_txt" del webui), scritto DOPO il salvataggio.
+        # If requested, also delete any .txt parameters file saved next to the image
+        # (the webui's "save_txt" option), written AFTER the save.
         if not bool(getattr(shared.opts, "mr_remove_sidecar_txt", True)):
             return
         for path in getattr(p, "_mr_stripped", []) or []:
@@ -423,7 +422,7 @@ class MetadataRemovalScript(scripts.Script):
 
 
 def _on_image_saved(params):
-    """Eseguito dopo che il webui ha salvato un'immagine: pulizia sul posto."""
+    """Runs after the webui has saved an image: clean it in place."""
     p = params.p
     if not getattr(p, "_mr_enabled", False):
         return
@@ -433,7 +432,7 @@ def _on_image_saved(params):
         return
 
     try:
-        strip_file(path, path, keep_icc=True)  # auto-pulizia: sempre sul posto
+        strip_file(path, path, keep_icc=True)  # auto-clean: always in place
         stripped = getattr(p, "_mr_stripped", None)
         if stripped is not None:
             stripped.append(path)
@@ -447,11 +446,11 @@ def _on_image_saved(params):
 
 
 # ===========================================================================
-# 2) Scheda in alto: pulizia in blocco (Extras-style)
+# 2) Top tab: batch cleaning (Extras-style)
 # ===========================================================================
 def _collect_folder_files(folder: str, recursive: bool, skip_suffix=None, skip_dir=None):
-    """Elenca le immagini supportate. Salta i file col suffisso (modalità copia) e i file
-    dentro skip_dir (la cartella di output, in modalità cartella dedicata)."""
+    """List the supported images. Skip files with the suffix (copy mode) and files
+    inside skip_dir (the output folder, in dedicated-folder mode)."""
     found = []
     skip_abs = (os.path.abspath(skip_dir) + os.sep) if skip_dir else None
     walker = os.walk(folder) if recursive else [(folder, [], os.listdir(folder))]
@@ -463,13 +462,13 @@ def _collect_folder_files(folder: str, recursive: bool, skip_suffix=None, skip_d
             if not (os.path.isfile(full) and _is_supported(full)):
                 continue
             if skip_suffix and os.path.splitext(fn)[0].endswith(skip_suffix):
-                continue  # evita di ri-pulire (e ri-suffissare) le copie già create
+                continue  # avoid re-cleaning (and re-suffixing) copies already created
             found.append(full)
     return found
 
 
 def _unique_dst(out_dir, base, used):
-    """Percorso libero in out_dir, evitando collisioni di nome."""
+    """A free path in out_dir, avoiding name collisions."""
     dst = os.path.join(out_dir, base)
     i = 1
     while dst in used or os.path.exists(dst):
@@ -481,7 +480,7 @@ def _unique_dst(out_dir, base, used):
 
 
 def clean_single(file_path, progress=gr.Progress()):
-    """Single Image: ripulisce un'immagine caricata e ne dà anteprima + download."""
+    """Single Image: clean an uploaded image and give a preview + download."""
     src = file_path if isinstance(file_path, str) else getattr(file_path, "name", None)
     if not src:
         return _msg("Please upload an image.", "warn"), gr.update(visible=False), gr.update(visible=False)
@@ -490,7 +489,7 @@ def clean_single(file_path, progress=gr.Progress()):
 
     progress(0.0, desc="Cleaning metadata")
     out_dir = _ensure_output_dir()
-    dst = _unique_dst(out_dir, os.path.basename(src), set())  # stesso nome (+ suffisso su collisione)
+    dst = _unique_dst(out_dir, os.path.basename(src), set())  # same name (+ suffix on collision)
     _log(f"Single Image: cleaning {os.path.basename(src)} → {out_dir}")
     try:
         strip_file(src, dst, keep_icc=True)
@@ -510,7 +509,7 @@ def clean_single(file_path, progress=gr.Progress()):
 
 
 def clean_batch(file_paths, progress=gr.Progress()):
-    """Batch Process: ripulisce più immagini caricate e le offre in download."""
+    """Batch Process: clean several uploaded images and offer them for download."""
     if not file_paths:
         return _msg("Please add one or more images.", "warn"), gr.update(visible=False)
     paths = [f if isinstance(f, str) else getattr(f, "name", None) for f in file_paths]
@@ -525,7 +524,7 @@ def clean_batch(file_paths, progress=gr.Progress()):
     _log(f"Batch Process: cleaning {n} uploaded image(s) → {out_dir}")
     for i, src in enumerate(_tqdm(paths, desc="[Metadata Removal] Batch", unit="img")):
         progress(i / n, desc=f"Cleaning metadata ({i + 1}/{n})")
-        dst = _unique_dst(out_dir, os.path.basename(src), used)  # stesso nome (+ suffisso su collisione)
+        dst = _unique_dst(out_dir, os.path.basename(src), used)  # same name (+ suffix on collision)
         try:
             strip_file(src, dst, keep_icc=True)
             outputs.append(dst)
@@ -544,9 +543,9 @@ def clean_batch(file_paths, progress=gr.Progress()):
 
 
 def clean_directory(input_dir, recursive, progress=gr.Progress()):
-    """Batch from Directory: ripulisce tutte le immagini di una cartella su disco.
+    """Batch from Directory: clean every image in a folder on disk.
 
-    Sovrascrivi o copia (nella stessa cartella) dipende dall'impostazione nei Settings.
+    Overwrite or copy (in the same folder) depends on the Settings.
     """
     input_dir = (input_dir or "").strip().strip('"')
     if not input_dir:
@@ -556,12 +555,12 @@ def clean_directory(input_dir, recursive, progress=gr.Progress()):
 
     mode, suffix = _output_settings()
 
-    # Sicurezza: con sottocartelle attive, rifiuta la radice di un disco (es. C:\) in
-    # QUALSIASI modalità: in sovrascrittura riscriverebbe ogni immagine del sistema; in
-    # cartella dedicata/copia scansionerebbe l'intero disco creando una marea di copie.
+    # Safety: with subfolders on, refuse a drive root (e.g. C:\) in ANY mode:
+    # overwrite would rewrite every image on the system; dedicated-folder/copy would
+    # scan the whole drive creating a flood of copies.
     if bool(recursive):
         norm = os.path.abspath(input_dir)
-        if os.path.dirname(norm) == norm:  # è una radice di unità (C:\, D:\, /)
+        if os.path.dirname(norm) == norm:  # it is a drive root (C:\, D:\, /)
             return _msg(
                 "Refusing to scan a whole drive root with subfolders. Choose a more "
                 "specific folder, or turn off «Include subfolders».", "err")
@@ -578,8 +577,8 @@ def clean_directory(input_dir, recursive, progress=gr.Progress()):
     if not files:
         return _msg("No supported images found in this directory.", "warn")
 
-    # In modalità cartella dedicata, se richiesto, ricrea la struttura delle sottocartelle
-    # di partenza dentro la cartella dedicata (invece di appiattire tutto).
+    # In dedicated-folder mode, if requested, recreate the source subfolder structure
+    # inside the dedicated folder (instead of flattening everything).
     preserve = (mode == MODE_FOLDER) and bool(getattr(shared.opts, "mr_preserve_structure", True))
     ext_dir = _extension_dir()
     input_abs = os.path.abspath(input_dir)
@@ -592,7 +591,7 @@ def clean_directory(input_dir, recursive, progress=gr.Progress()):
         progress(i / n, desc=f"Cleaning metadata ({i + 1}/{n})")
         try:
             if preserve:
-                # percorso relativo alla cartella di input, ricreato nella cartella dedicata
+                # path relative to the input folder, recreated inside the dedicated folder
                 rel = os.path.relpath(os.path.abspath(src), input_abs)
                 dst = _unique_dst(ext_dir, rel, used)
             else:
@@ -610,16 +609,16 @@ def clean_directory(input_dir, recursive, progress=gr.Progress()):
 
 
 def pnginfo_clean(pil_image, fname=""):
-    """PNG Info: ripulisce l'immagine caricata, la salva nella cartella dedicata e la offre
-    come copia da scaricare (l'immagine in PNG Info è un upload, quindi è sempre una copia).
+    """PNG Info: clean the uploaded image, save it into the dedicated folder and offer it
+    as a downloadable copy (the PNG Info image is an upload, so it is always a copy).
 
-    'fname' è il nome originale recuperato dal frontend (l'oggetto PIL non lo conserva)."""
+    'fname' is the original name recovered from the frontend (the PIL object loses it)."""
     if pil_image is None:
         return gr.update(visible=False), _msg("Load an image into «PNG Info» first.", "warn")
     try:
         _check_bomb(getattr(pil_image, "size", None))
-        # Nome del file: prima quello passato dal frontend (JS legge l'URL dell'immagine),
-        # poi l'eventuale .filename del PIL, infine "cleaned". Salviamo sempre in PNG.
+        # File name: first the one passed from the frontend (JS reads the image URL),
+        # then the PIL .filename if any, finally "cleaned". We always save as PNG.
         cand = os.path.basename((fname or "").strip())
         if not cand:
             cand = os.path.basename(getattr(pil_image, "filename", "") or "").strip()
@@ -768,9 +767,9 @@ def on_ui_tabs():
                 dir_btn = gr.Button("Clean metadata", variant="primary")
                 dir_status = gr.HTML()
                 dir_btn.click(
-                    # Feedback immediato + riquadro visibile: così la barra di
-                    # avanzamento di Gradio ha dove disegnarsi (altrimenti su un HTML
-                    # vuoto non si vede e sembra "non fare nulla").
+                    # Immediate feedback + visible box: this gives Gradio's progress bar
+                    # somewhere to draw (on an empty HTML it isn't visible and it looks
+                    # like "nothing happens").
                     fn=lambda: _msg("⏳ Cleaning metadata… please wait.", "info"),
                     outputs=[dir_status],
                 ).then(
@@ -783,23 +782,23 @@ def on_ui_tabs():
 
 
 # ===========================================================================
-# 3) Integrazione con l'Image Browser (AlUlkesh): pulsante "Delete metadata"
-#    iniettato accanto al pulsante "Delete", senza modificare quell'estensione.
+# 3) Image Browser integration (AlUlkesh): "Delete metadata" button
+#    injected next to the "Delete" button, without modifying that extension.
 # ===========================================================================
 def ib_delete_metadata(img_file_name):
-    """Ripulisce l'immagine selezionata nell'Image Browser secondo l'impostazione Settings.
+    """Clean the image selected in the Image Browser according to the Settings.
 
-    Restituisce DUE valori: il testo dei parametri per il riquadro «Generation Info»
-    (vuoto se l'immagine è stata sovrascritta; invariato se è stata fatta una copia) e un
-    messaggio HTML di conferma da mostrare sotto il pulsante — così l'azione è visibile
-    anche quando l'originale resta intatto (es. modalità cartella dedicata)."""
+    Returns TWO values: the parameters text for the «Generation Info» box (empty if the
+    image was overwritten; unchanged if a copy was made) and a confirmation HTML message
+    to show below the button — so the action is visible even when the original stays
+    intact (e.g. dedicated-folder mode)."""
     try:
         path = img_file_name
         if not path or not os.path.isfile(path) or not _is_supported(path):
             geninfo = _read_geninfo(path) if path else ""
             return geninfo, _msg("Select a supported image first.", "warn")
         mode, suffix = _output_settings()
-        dst = _disk_dst(path, mode, suffix, set())  # nome originale (+ suffisso su collisione)
+        dst = _disk_dst(path, mode, suffix, set())  # original name (+ suffix on collision)
         strip_file(path, dst, keep_icc=True)
         _log(f"Image Browser: cleaned {os.path.basename(path)} → {os.path.basename(dst)} (mode: {mode})")
         if mode == MODE_OVERWRITE:
@@ -817,32 +816,32 @@ def ib_delete_metadata(img_file_name):
         return geninfo, _msg("Error while cleaning (see console).", "err")
 
 
-# Stato per agganciare i componenti dell'Image Browser man mano che vengono creati.
+# State to hook the Image Browser components as they are created.
 _IB = {"last_base": None, "pending": {}}
 _DEL_SUFFIX = "_image_browser_del_img_btn"
 
 
 def _on_after_component(component, **kwargs):
-    """Inietta il pulsante "Delete metadata" accanto al "Delete" dell'Image Browser.
+    """Inject the "Delete metadata" button next to the Image Browser's "Delete".
 
-    L'Image Browser crea, per ogni sua scheda, in quest'ordine: il pulsante Delete
-    (elem_id "<base>_image_browser_del_img_btn"), poi la Textbox "Generation Info",
-    poi la Textbox "File Name" (che contiene il percorso). Catturiamo questi tre
-    componenti e colleghiamo il click. Tutto in try/except: se qualcosa non combacia,
-    l'Image Browser resta intatto.
+    For each of its tabs the Image Browser creates, in this order: the Delete button
+    (elem_id "<base>_image_browser_del_img_btn"), then the "Generation Info" Textbox,
+    then the "File Name" Textbox (which holds the path). We capture these three
+    components and wire the click. Everything in try/except: if something doesn't match,
+    the Image Browser stays intact.
     """
     try:
         eid = getattr(component, "elem_id", None) or ""
 
-        # --- Tab "PNG Info": pulsante "Remove metadata" sotto l'immagine sorgente ---
+        # --- "PNG Info" tab: "Remove metadata" button under the source image ---
         if eid == "pnginfo_image":
             mr_btn = gr.Button("Remove metadata", elem_id="metadata_removal_pnginfo_btn", variant="primary")
             mr_status = gr.HTML()
             mr_download = gr.File(label="Cleaned image (download)", interactive=False, visible=False)
             mr_fname = gr.Textbox(visible=False, elem_id="metadata_removal_pnginfo_fname")
-            # Il nome originale dell'immagine caricata non arriva nell'oggetto PIL (Gradio
-            # lo perde). Lo recuperiamo dal frontend leggendo l'URL dell'immagine mostrata
-            # nel tab PNG Info (Gradio conserva il nome originale nel percorso del file).
+            # The original name of the uploaded image doesn't reach the PIL object (Gradio
+            # loses it). We recover it from the frontend by reading the URL of the image
+            # shown in the PNG Info tab (Gradio keeps the original name in the file path).
             grab_name_js = r"""(img, fname) => {
               try {
                 const root = document.querySelector('#pnginfo_image');
@@ -867,7 +866,7 @@ def _on_after_component(component, **kwargs):
         if eid.endswith(_DEL_SUFFIX):
             base = eid[: -len(_DEL_SUFFIX)]
             btn = gr.Button("Delete metadata", elem_id=f"{base}_metadata_removal_btn")
-            status = gr.HTML()  # conferma visiva sotto il pulsante
+            status = gr.HTML()  # visual confirmation below the button
             _IB["pending"][base] = {"button": btn, "status": status, "info": None}
             _IB["last_base"] = base
             return
@@ -883,11 +882,11 @@ def _on_after_component(component, **kwargs):
         if isinstance(component, gr.Textbox) and label == "Generation Info" and entry["info"] is None:
             entry["info"] = component
         elif isinstance(component, gr.Textbox) and label == "File Name":
-            # "File Name" è l'ultimo dei tre: ora colleghiamo il pulsante.
+            # "File Name" is the last of the three: now we wire the button.
             if entry["button"] is not None and entry["info"] is not None:
                 entry["button"].click(
-                    # Feedback immediato "in corso": il riquadro diventa visibile e Gradio
-                    # ci disegna sopra l'animazione di caricamento mentre lavora.
+                    # Immediate "in progress" feedback: the box becomes visible and Gradio
+                    # draws the loading animation on it while it works.
                     fn=lambda: _msg("⏳ Cleaning metadata…", "info"),
                     outputs=[entry["status"]],
                 ).then(
@@ -895,13 +894,13 @@ def _on_after_component(component, **kwargs):
                     inputs=[component],
                     outputs=[entry["info"], entry["status"]],
                 )
-            _IB["last_base"] = None  # chiude la finestra di abbinamento per questa scheda
+            _IB["last_base"] = None  # close the matching window for this tab
     except Exception:
         traceback.print_exc()
 
 
 # ---------------------------------------------------------------------------
-# Settings (sottomenu "Metadata Removal")
+# Settings (the "Metadata Removal" submenu)
 # ---------------------------------------------------------------------------
 def on_ui_settings():
     section = ("metadata_removal", TAB_TITLE)
@@ -951,18 +950,18 @@ def on_ui_settings():
 
 
 # ---------------------------------------------------------------------------
-# Posizionamento della scheda (tra «Extras» e «PNG Info»):
-# Forge ordina le schede in alto secondo Settings -> UI Tab Order. Una scheda di
-# estensione NON può essere inserita automaticamente in modo affidabile tra le schede
-# native: all'avvio dell'estensione la scheda non e' ancora una "scelta" valida e
-# verrebbe scartata. Per posizionarla basta impostarlo UNA volta (resta salvato):
-#   Settings -> UI Tab Order -> aggiungi "Metadata Removal" dopo "Extras"
+# Tab positioning (between «Extras» and «PNG Info»):
+# Forge orders the top tabs according to Settings -> UI Tab Order. An extension
+# tab CANNOT be reliably inserted automatically among the native tabs: at extension
+# startup the tab is not yet a valid "choice" and would be dropped. To position it,
+# just set it ONCE (it stays saved):
+#   Settings -> UI Tab Order -> add "Metadata Removal" after "Extras"
 #   -> Apply settings -> Reload UI
 # ---------------------------------------------------------------------------
 
 
 # ---------------------------------------------------------------------------
-# Registrazione dei callback
+# Callback registration
 # ---------------------------------------------------------------------------
 script_callbacks.on_image_saved(_on_image_saved)
 script_callbacks.on_ui_tabs(on_ui_tabs)
