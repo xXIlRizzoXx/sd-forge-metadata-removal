@@ -1,165 +1,164 @@
-# Metadata Removal — estensione per Stable Diffusion WebUI Forge (Neo)
+# Metadata Removal — extension for Stable Diffusion WebUI Forge (Neo)
 
-> L'interfaccia dell'estensione è **in inglese**. Questa guida è in italiano per comodità.
+Removes **all** metadata from images generated with Stable Diffusion: prompt,
+parameters, model, seed, and any other information the **PNG Info** tab could read
+(including EXIF and XMP for JPEG/WEBP).
 
-Rimuove **tutti** i metadati dalle immagini generate con Stable Diffusion: prompt,
-parametri, modello, seed, e qualsiasi altra informazione che il tab **PNG Info**
-sarebbe in grado di leggere (incluso EXIF e XMP per JPEG/WEBP).
-
-Compatibile con **Stable Diffusion WebUI Forge – Neo**
+Compatible with **Stable Diffusion WebUI Forge – Neo**
 ([Haoming02/sd-webui-forge-classic](https://github.com/Haoming02/sd-webui-forge-classic), branch `neo`)
-e, in generale, con le webui derivate da AUTOMATIC1111.
+and, in general, with AUTOMATIC1111-derived web UIs.
 
-## Cosa fa
+## What it does
 
-L'estensione lavora in **tre punti**:
+The extension works in **four places**:
 
-1. **Sezione "Metadata Removal" in txt2img / img2img**
-   Una sezione a fisarmonica con una spunta:
-   - **spenta di default** → le immagini si salvano normalmente;
-   - **attiva** (*Strip metadata from saved images*) → ogni immagine generata viene
-     salvata **senza metadati** (il file viene ripulito sul posto).
+1. **"Metadata Removal" section in txt2img / img2img**
+   An accordion section with a checkbox:
+   - **off by default** → images are saved normally;
+   - **enabled** (*Strip metadata from saved images*) → every generated image is saved
+     **without metadata** (the file is cleaned in place).
 
-2. **Scheda "Metadata Removal" in alto** (tra **Extras** e **PNG Info**)
-   Tre sotto-schede in stile *Extras*:
-   - **Single Image** → ripulisci un'immagine caricata e scaricala (con anteprima);
-   - **Batch Process** → ripulisci più immagini caricate e scaricale;
-   - **Batch from Directory** → ripulisci tutte le immagini di una cartella su disco
-     (con barra di avanzamento; opzione *Include subfolders*).
+2. **Top "Metadata Removal" tab** (between **Extras** and **PNG Info**)
+   Three *Extras*-style sub-tabs:
+   - **Single Image** → clean an uploaded image and download it (with a preview);
+   - **Batch Process** → clean several uploaded images and download them;
+   - **Batch from Directory** → clean every image in a folder on disk
+     (with a progress bar; *Include subfolders* option).
 
-3. **Pulsante "Delete metadata" nell'Image Browser**
-   Accanto al pulsante *Delete* dell'estensione
-   [images-browser](https://github.com/AlUlkesh/stable-diffusion-webui-images-browser):
-   ripulisce l'immagine attualmente selezionata mentre sfogli la libreria.
+3. **"Delete metadata" button in the Image Browser**
+   Next to the *Delete* button of the
+   [images-browser](https://github.com/AlUlkesh/stable-diffusion-webui-images-browser)
+   extension: cleans the currently selected image while you browse your library.
 
-4. **Pulsante "Remove metadata" nel tab PNG Info**
-   Sotto l'immagine *Source*: ripulisce l'immagine caricata e la offre come **copia
-   pulita da scaricare** (come *Single Image*, perché l'immagine è un upload).
+4. **"Remove metadata" button in the PNG Info tab**
+   Below the *Source* image: cleans the uploaded image and offers it as a **clean
+   downloadable copy** (like *Single Image*, because the image is an upload).
 
-## Dove vengono salvate le immagini pulite (una sola impostazione)
+## Where cleaned images are saved (a single setting)
 
-Per le operazioni **su disco** (*Batch from Directory* e il pulsante *Delete metadata*
-dell'Image Browser) il comportamento si sceglie **una volta** in
-**Settings → Metadata Removal** tra **tre modalità**:
+For **on-disk** operations (*Batch from Directory* and the Image Browser *Delete metadata*
+button) the behavior is chosen **once** in **Settings → Metadata Removal**, among **three
+modes**:
 
-- **Save to the «Metadata Removal» folder (in the images root)** → crea (se non esiste)
-  una **cartella dedicata** con il nome dell'estensione **nella radice delle immagini**,
-  cioè accanto a `txt2img-images`, `extras-images`, ecc., e vi salva tutte le immagini
-  pulite; gli originali restano intatti. *(default)*
-  Esempio: `F:\Stability_Matrix\Data\Images\Metadata Removal\`. Il percorso si adatta
-  automaticamente a dove ogni utente salva le immagini (vengono risolte anche le
-  *junction* di Stability Matrix).
-- **Save a clean copy in the same folder** → crea una copia pulita nella stessa cartella
-  dell'originale, con un suffisso nel nome (predefinito `_clean`); l'originale resta intatto.
-  Il suffisso è **riservato** alle copie pulite: se esiste già un file con quel nome viene
-  sostituito (così ri-pulendo si aggiorna la copia, senza creare doppioni).
-- **Overwrite the original image** → riscrive direttamente il file, senza copie.
+- **Save to the «Metadata Removal» folder (in the images root)** → creates (if missing) a
+  **dedicated folder** named after the extension **in the images root**, i.e. next to
+  `txt2img-images`, `extras-images`, etc., and saves all cleaned images there; originals
+  stay intact. *(default)*
+  Example: `F:\Stability_Matrix\Data\Images\Metadata Removal\`. The path adapts
+  automatically to wherever each user saves images (Stability Matrix *junctions* are
+  resolved too).
+- **Save a clean copy in the same folder** → creates a clean copy in the same folder as
+  the original, with a suffix in the name (default `_clean`); the original stays intact.
+  The suffix is **reserved** for clean copies: if a file with that name already exists it
+  is replaced (so re-cleaning updates the copy, without creating duplicates).
+- **Overwrite the original image** → rewrites the file directly, no copies.
 
-Il **nome della cartella dedicata** è configurabile in *Settings → Metadata Removal*
-(predefinito: `Metadata Removal`).
+The **dedicated folder name** is configurable in *Settings → Metadata Removal*
+(default: `Metadata Removal`).
 
-> **Nome dei file:** le immagini pulite mantengono **lo stesso nome** dell'originale
-> (cartella dedicata e sovrascrivi). Se nella cartella dedicata esiste già un file con
-> quel nome, viene aggiunto un **suffisso numerico** (`_1`, `_2`, …) così non si
-> sovrascrive mai nulla. Solo la modalità *«copia nella stessa cartella»* usa il suffisso
-> testuale (predefinito `_clean`). Anche il pulsante di **PNG Info** salva con il nome
-> dell'immagine caricata (se Forge lo fornisce; altrimenti `cleaned.png`).
+> **File names:** cleaned images keep the **same name** as the original (dedicated folder
+> and overwrite). If a file with that name already exists in the dedicated folder, a
+> **numeric suffix** (`_1`, `_2`, …) is added so nothing is ever overwritten. Only the
+> *«save a clean copy in the same folder»* mode uses the textual suffix (default `_clean`).
+> The **PNG Info** button also saves with the uploaded image's name (if Forge provides it;
+> otherwise `cleaned.png`).
 
-> Nota: la pulizia automatica dopo la generazione (punto 1) ripulisce **sempre sul posto**
-> il file appena creato, a prescindere da questa impostazione.
-> Single Image, Batch Process e il pulsante di PNG Info lavorano su file *caricati*
-> (copie temporanee): salvano la versione pulita nella **cartella dedicata** e la offrono
-> anche come **copia da scaricare** (non possono sovrascrivere file sul tuo disco, perché
-> non ne conoscono l'origine).
+> Note: automatic cleaning after generation (point 1) always cleans the freshly created
+> file **in place**, regardless of this setting.
+> Single Image, Batch Process and the PNG Info button work on *uploaded* files (temporary
+> copies): they save the clean version into the **dedicated folder** and also offer it as
+> a **downloadable copy** (they cannot overwrite files on your disk, because they don't
+> know their origin).
 
-## Cosa viene rimosso
+## What is removed
 
-Tutto ciò che apparirebbe in **PNG Info**:
+Everything that would appear in **PNG Info**:
 
-- **PNG**: ogni blocco di testo (`parameters`, `prompt`, `workflow`, `Comment`,
-  `Description`, `Software`, XMP e qualunque chiave aggiunta da altri nodi/estensioni)
-  ed eventuali EXIF incorporati.
-- **JPEG / WEBP**: EXIF (incluso `UserComment`), XMP e commenti.
+- **PNG**: every text chunk (`parameters`, `prompt`, `workflow`, `Comment`,
+  `Description`, `Software`, XMP and any key added by other nodes/extensions) and any
+  embedded EXIF.
+- **JPEG / WEBP**: EXIF (including `UserComment`), XMP and comments.
 
-## Cosa viene mantenuto
+## What is kept
 
-- Il **profilo colore ICC** (fedeltà dei colori) — mantenuto **sempre**.
-- Il **canale di trasparenza** (alfa), quando presente.
-- I **pixel**: per i PNG la riscrittura è **senza perdita di qualità**
-  (JPEG/WEBP ricodificati a qualità 95).
-- Le **immagini animate** (GIF/WEBP/APNG) mantengono **tutti i fotogrammi**, i tempi e
-  il loop.
+- The **ICC color profile** (color fidelity) — **always** kept.
+- The **transparency (alpha) channel**, when present.
+- The **pixels**: for PNG the rewrite is **lossless** (JPEG/WEBP are re-encoded at
+  quality 95).
+- **Animated images** (GIF/WEBP/APNG) keep **all frames**, timings and the loop.
 
-## Installazione
+## Installation
 
-**Metodo 1 — da URL (consigliato).** In Forge/A1111: tab **Extensions → Install from URL**,
-incolla:
+**Method 1 — from URL (recommended).** In Forge/A1111: **Extensions → Install from URL**,
+paste:
 ```
 https://github.com/xXIlRizzoXx/sd-forge-metadata-removal
 ```
-poi **Install** e **riavvia Forge per intero** (non basta "Reload UI" per una estensione nuova).
+then **Install** and **fully restart Forge** ("Reload UI" is not enough for a new extension).
 
-**Metodo 2 — manuale.** Copia (o `git clone`) l'intera cartella dell'estensione dentro
-`extensions` di Forge:
+**Method 2 — manual.** Copy (or `git clone`) the whole extension folder into Forge's
+`extensions`:
 ```
-<cartella-di-forge>\extensions\sd-forge-metadata-removal\
+<forge-folder>\extensions\sd-forge-metadata-removal\
 ```
-(deve contenere `scripts\metadata_stripper.py`), poi riavvia Forge per intero.
+(it must contain `scripts\metadata_stripper.py`), then fully restart Forge.
 
-Dopo il riavvio troverai la sezione in txt2img/img2img, la scheda **Metadata Removal** in alto
-(tra Extras e PNG Info) e il pulsante **Delete metadata** nell'Image Browser.
+After the restart you'll find the section in txt2img/img2img, the **Metadata Removal** tab
+at the top (between Extras and PNG Info) and the **Delete metadata** button in the Image
+Browser.
 
-Non servono dipendenze aggiuntive: usa **Pillow**, già incluso in Forge.
+No extra dependencies are needed: it uses **Pillow**, already included in Forge.
 
 ## Settings → Metadata Removal
 
-- **Modalità di salvataggio** per le operazioni su disco (cartella dedicata / copia nella
-  stessa cartella / sovrascrivi). *(default: cartella dedicata)*
-- **Nome della cartella dedicata** creata nella radice delle immagini (predefinito
-  `Metadata Removal`).
-- **Mantieni la struttura delle sottocartelle** (predefinito **attivo**): in modalità
-  cartella dedicata, *Batch from Directory* ricrea dentro «Metadata Removal» la stessa
-  struttura di cartelle dell'origine (es. `2026-05-28/Accantonate/foto.png`). Se disattivo,
-  tutte le immagini pulite finiscono "piatte" nella cartella dedicata.
-- **Suffisso** per le copie pulite (predefinito `_clean`).
-- Eliminare anche l'eventuale file `.txt` dei parametri durante la pulizia automatica.
+- **Save mode** for on-disk operations (dedicated folder / copy in the same folder /
+  overwrite). *(default: dedicated folder)*
+- **Dedicated folder name** created in the images root (default `Metadata Removal`).
+- **Recreate the source subfolder structure** (default **on**): in dedicated-folder mode,
+  *Batch from Directory* recreates inside «Metadata Removal» the same folder structure as
+  the source (e.g. `2026-05-28/keep/photo.png`). If off, all cleaned images go "flat" into
+  the dedicated folder.
+- **Suffix** for clean copies (default `_clean`).
+- Also delete the sidecar `.txt` parameters file during automatic cleaning.
 
-## Posizione della scheda (tra Extras e PNG Info)
+## Tab position (between Extras and PNG Info)
 
-Forge ordina le schede in alto in base a **Settings → UI Tab Order**. Una scheda di
-estensione non può essere inserita automaticamente tra le schede native, quindi va
-impostato **una volta** (poi resta salvato anche ai riavvii):
+Forge orders the top tabs according to **Settings → UI Tab Order**. An extension tab can't
+be inserted automatically among the native tabs, so it must be set **once** (then it stays
+saved across restarts):
 
 1. **Settings → UI Tab Order**
-2. aggiungi **`Metadata Removal`** subito dopo **`Extras`**
+2. add **`Metadata Removal`** right after **`Extras`**
 3. **Apply settings** → **Reload UI**
 
-Risultato: `txt2img · img2img · Extras · Metadata Removal · PNG Info · …`
+Result: `txt2img · img2img · Extras · Metadata Removal · PNG Info · …`
 
-## Verifica
+## Verification
 
-Dopo la pulizia trascina l'immagine nel tab **PNG Info**: non deve comparire alcun
-parametro. L'estensione esegue anche un controllo automatico e segnala nel riepilogo
-eventuali file in cui fossero rimasti metadati.
+After cleaning, drag the image into the **PNG Info** tab: no parameter should appear. The
+extension also runs an automatic check and reports in the summary any files where metadata
+might have remained.
 
-## Sicurezza e robustezza
+## Security and robustness
 
-L'estensione è stata sottoposta a due audit di sicurezza multi-agente (uno finale prima
-della pubblicazione) e include alcune protezioni:
+The extension went through two multi-agent security audits (one final audit before
+publication) and includes several protections:
 
-- **Immagini malevole**: rifiuta immagini con dimensioni sproporzionate (*decompression
-  bomb*) e animazioni con un numero enorme di fotogrammi, per non esaurire la memoria.
-- **GIF animate**: se l'encoder non riesce a salvare l'animazione, ripiega su un singolo
-  fotogramma **comunque ripulito** (l'immagine non resta mai con i metadati).
-- **Percorsi**: il nome della cartella dedicata è ridotto a un nome semplice, così un
-  valore errato nei Settings non può far scrivere fuori dalla radice delle immagini;
-  con *Include subfolders* attivo, viene rifiutata la pulizia dalla radice di un disco
-  (es. `C:\`) **in tutte le modalità**.
-- **Niente sovrascritture accidentali**: nella cartella dedicata i nomi che già esistono
-  ricevono automaticamente un suffisso numerico, senza cancellare file preesistenti.
-- **Scrittura sicura**: ogni file viene scritto prima su un file temporaneo e poi
-  sostituito in modo atomico; un salvataggio vuoto (0 byte) viene rifiutato per non
-  rovinare l'originale.
-- **Auto-pulizia "best-effort"**: se per un'immagine la pulizia automatica fallisce,
-  compare un **avviso visibile** nell'interfaccia (oltre al log in console), così sai
-  che quel file potrebbe contenere ancora i metadati.
+- **Malicious images**: refuses images with disproportionate dimensions (*decompression
+  bomb*) and animations with a huge number of frames, to avoid exhausting memory.
+- **Animated GIFs**: if the encoder can't save the animation, it falls back to a single
+  **still-cleaned** frame (the image never stays with its metadata).
+- **Paths**: the dedicated folder name is reduced to a simple name, so a wrong value in
+  Settings cannot write outside the images root; with *Include subfolders* on, cleaning
+  from a drive root (e.g. `C:\`) is refused **in all modes**.
+- **No accidental overwrites**: in the dedicated folder, names that already exist
+  automatically get a numeric suffix, without deleting pre-existing files.
+- **Safe writing**: each file is written to a temporary file first and then replaced
+  atomically; an empty (0-byte) save is refused so the original is never ruined.
+- **Best-effort auto-clean**: if automatic cleaning fails for an image, a **visible
+  warning** appears in the UI (in addition to the console log), so you know that file may
+  still contain metadata.
+
+## License
+
+[MIT](LICENSE) © xXIlRizzoXx
