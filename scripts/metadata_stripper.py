@@ -29,7 +29,6 @@ What is removed (everything the "PNG Info" tab could read):
   - JPEG/WEBP : EXIF (including UserComment with prompt and parameters), XMP, comments.
 
 What is kept:
-  - The ICC color profile (color fidelity) — always kept.
   - The alpha (transparency) channel, when present.
   - The pixels: for PNG the rewrite is lossless.
 
@@ -150,8 +149,6 @@ def _clean_frames(im: Image.Image):
 
 # Formats that support multiple frames (for animated images)
 _ANIMATION_FORMATS = {"GIF", "WEBP", "PNG"}
-# Formats that support the ICC color profile
-_ICC_FORMATS = {"PNG", "JPEG", "WEBP", "TIFF"}
 
 
 def _save_static(img: Image.Image, tmp: str, out_format: str, save_kwargs: dict) -> None:
@@ -161,7 +158,7 @@ def _save_static(img: Image.Image, tmp: str, out_format: str, save_kwargs: dict)
     img.save(tmp, format=out_format, **save_kwargs)
 
 
-def strip_file(src_path: str, dst_path: str, keep_icc: bool = True) -> None:
+def strip_file(src_path: str, dst_path: str) -> None:
     """Read src_path, remove every metadata field and write to dst_path.
 
     Writes to a temporary file first and then replaces it, so an interruption
@@ -172,7 +169,6 @@ def strip_file(src_path: str, dst_path: str, keep_icc: bool = True) -> None:
     with Image.open(src_path) as im:
         _check_bomb(im.size)  # refuse oversized images (anti decompression-bomb)
         im.load()
-        icc = im.info.get("icc_profile") if keep_icc else None
         is_anim = getattr(im, "is_animated", False) and getattr(im, "n_frames", 1) > 1
         if is_anim:
             loop = im.info.get("loop", 0)
@@ -193,9 +189,6 @@ def strip_file(src_path: str, dst_path: str, keep_icc: bool = True) -> None:
         out_format, save_kwargs = "GIF", {}
     else:
         out_format, save_kwargs = "PNG", {"optimize": True}
-
-    if icc and out_format in _ICC_FORMATS:
-        save_kwargs["icc_profile"] = icc
 
     dst_dir = os.path.dirname(dst_path) or "."
     os.makedirs(dst_dir, exist_ok=True)
@@ -432,7 +425,7 @@ def _on_image_saved(params):
         return
 
     try:
-        strip_file(path, path, keep_icc=True)  # auto-clean: always in place
+        strip_file(path, path)  # auto-clean: always in place
         stripped = getattr(p, "_mr_stripped", None)
         if stripped is not None:
             stripped.append(path)
@@ -492,7 +485,7 @@ def clean_single(file_path, progress=gr.Progress()):
     dst = _unique_dst(out_dir, os.path.basename(src), set())  # same name (+ suffix on collision)
     _log(f"Single Image: cleaning {os.path.basename(src)} → {out_dir}")
     try:
-        strip_file(src, dst, keep_icc=True)
+        strip_file(src, dst)
     except Exception as e:  # noqa: BLE001
         _log(f"Single Image: ERROR on {os.path.basename(src)}: {e}")
         return _msg(f"Error: {html.escape(str(e))}", "err"), gr.update(visible=False), gr.update(visible=False)
@@ -526,7 +519,7 @@ def clean_batch(file_paths, progress=gr.Progress()):
         progress(i / n, desc=f"Cleaning metadata ({i + 1}/{n})")
         dst = _unique_dst(out_dir, os.path.basename(src), used)  # same name (+ suffix on collision)
         try:
-            strip_file(src, dst, keep_icc=True)
+            strip_file(src, dst)
             outputs.append(dst)
             ok += 1
             if _residual_metadata(dst):
@@ -596,7 +589,7 @@ def clean_directory(input_dir, recursive, progress=gr.Progress()):
                 dst = _unique_dst(ext_dir, rel, used)
             else:
                 dst = _disk_dst(src, mode, suffix, used)
-            strip_file(src, dst, keep_icc=True)
+            strip_file(src, dst)
             ok += 1
             if _residual_metadata(dst):
                 residual.append(dst)
@@ -624,13 +617,9 @@ def pnginfo_clean(pil_image, fname=""):
             cand = os.path.basename(getattr(pil_image, "filename", "") or "").strip()
         name = (os.path.splitext(cand)[0] if cand else "cleaned") or "cleaned"
         clean = _build_clean_static(pil_image)
-        icc = pil_image.info.get("icc_profile") if getattr(pil_image, "info", None) else None
         out_dir = _ensure_output_dir()
         dst = _unique_dst(out_dir, f"{name}.png", set())
-        save_kwargs = {"optimize": True}
-        if icc:
-            save_kwargs["icc_profile"] = icc
-        clean.save(dst, format="PNG", **save_kwargs)
+        clean.save(dst, format="PNG", optimize=True)
         _log(f"PNG Info: cleaned → {os.path.basename(dst)}")
         residual = _residual_metadata(dst)
         head = (f"<b>Done.</b> Saved to <code>{html.escape(out_dir)}</code> as "
@@ -708,8 +697,7 @@ def on_ui_tabs():
         gr.HTML(
             "<p style='opacity:.75;margin:.4em 0 1em'>Removes everything readable by "
             "«PNG Info» (prompt, parameters, EXIF, XMP, …) from your images. "
-            "PNG is rewritten losslessly; JPEG/WEBP are re-encoded at high quality (95). "
-            "The ICC color profile is kept.</p>"
+            "PNG is rewritten losslessly; JPEG/WEBP are re-encoded at high quality (95).</p>"
         )
         with gr.Tabs(elem_id="metadata_removal_tabs"):
 
@@ -799,7 +787,7 @@ def ib_delete_metadata(img_file_name):
             return geninfo, _msg("Select a supported image first.", "warn")
         mode, suffix = _output_settings()
         dst = _disk_dst(path, mode, suffix, set())  # original name (+ suffix on collision)
-        strip_file(path, dst, keep_icc=True)
+        strip_file(path, dst)
         _log(f"Image Browser: cleaned {os.path.basename(path)} → {os.path.basename(dst)} (mode: {mode})")
         if mode == MODE_OVERWRITE:
             note = "Metadata removed (original overwritten)."
