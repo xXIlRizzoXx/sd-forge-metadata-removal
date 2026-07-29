@@ -1,6 +1,14 @@
 # Diario di sviluppo interno (resta locale, non pubblicato)
 STATO-SVILUPPO.md
 
+# Note di lavoro e report/analisi interni (sempre locali, mai pubblicati)
+NOTES.md
+ANALISI-*.md
+
+# Monitoraggio engagement giornaliero (locale, non pubblicato)
+MONITORAGGIO.md
+MONITORAGGIO-stato.json
+
 # Python
 __pycache__/
 *.py[cod]
